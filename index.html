@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="description" content="A real-time simulation of the show at Alte Münze, Berlin.">
+<meta property="og:title" content="Test show">
+<meta property="og:description" content="A real-time simulation of the show at Alte Münze, Berlin.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://cayequitas.github.io/simulator/">
+<meta property="og:image" content="https://cayequitas.github.io/simulator/show/poster.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Test show</title>
+<link rel="icon" href="data:,">
+<style>
+  @font-face { font-family: Archivo; font-weight: 100 900; font-stretch: 62% 125%; font-display: swap;
+    src: url(https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.0.18/files/archivo-latin-standard-normal.woff2) format("woff2-variations"); }
+  :root {
+    --bg: #000; --fg: #fff; --dim: rgba(255,255,255,.58); --accent: #fff; --line: rgba(255,255,255,.16);
+    --gutter: clamp(20px, 3.2vw, 56px);
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font: 500 15px/1.4 Archivo, ui-sans-serif, -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  canvas { display: block; }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  :focus-visible { outline: 1px solid #fff; outline-offset: 3px; }
+
+  /* ---- working view (start.bat) ---- */
+  #hud { position: fixed; left: 14px; top: 12px; pointer-events: none; text-shadow: 0 1px 2px #000; font-size: 12px; }
+  #hud h1 { font-size: 13px; margin: 0 0 2px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+  #hud .row { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #beat { width: 8px; height: 8px; border-radius: 50%; background: #fff; display: inline-block; }
+  #help { position: fixed; left: 14px; bottom: 12px; color: var(--dim); pointer-events: none; text-shadow: 0 1px 2px #000; font-size: 12px; }
+  #help kbd { font: inherit; color: var(--fg); border: 1px solid #444; border-radius: 3px; padding: 0 4px; }
+  #toast { position: fixed; left: 50%; top: 20px; transform: translateX(-50%); z-index: 40; background: #fff; color: #000;
+    padding: 8px 16px; border-radius: 999px; opacity: 0; transition: opacity .2s; pointer-events: none; font-size: 13px; font-weight: 500; }
+  #toast.show { opacity: 1; }
+  #drop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; font-size: 18px; background: rgba(0,0,0,.7); }
+  #drop.show { display: flex; }
+  .hidden-ui #hud, .hidden-ui #help { display: none; }
+  @media (max-width: 700px) { #help { display: none; } }
+
+  /* Rolling label: the text slides up and an identical copy follows it. */
+  .roll { display: inline-block; height: 1.25em; line-height: 1.25; overflow: hidden; vertical-align: middle; }
+  .roll > span { display: block; transition: transform .5s cubic-bezier(.7,0,.15,1); }
+  button:hover .roll > span { transform: translateY(-100%); }
+
+  /* ---- player bar ---- */
+  #transport { position: fixed; left: 50%; transform: translateX(-50%); bottom: 40px; z-index: 20; width: min(760px, calc(100vw - 2 * var(--gutter)));
+    box-sizing: border-box; display: none; align-items: center; gap: 20px; padding: 2px 16px; border-radius: 12px; background: rgba(0,0,0,.7); transition: opacity .4s; --hit: 0; }
+  #transport.on { display: flex; }
+  /* pause bars and play triangle are the same 8-point shape, so one morphs into the other */
+  #tPlay { width: 44px; height: 44px; margin-left: -14px; flex: none; display: grid; place-items: center; transition: transform .25s cubic-bezier(.3,1.6,.5,1); }
+  #tPlay:hover { transform: scale(1.22); }
+  #tPlay:active { transform: scale(.86); }
+  #tPlay i { display: block; width: 16px; height: 16px; background: #fff; transition: clip-path .32s cubic-bezier(.7,0,.15,1); }
+  #tPlay[data-state="playing"] i { clip-path: polygon(10% 0, 40% 0, 40% 100%, 60% 100%, 60% 0, 90% 0, 90% 100%, 10% 100%); }
+  #tPlay[data-state="paused"] i { clip-path: polygon(14% 0, 55% 25%, 55% 75%, 55% 75%, 55% 25%, 96% 50%, 96% 50%, 14% 100%); }
+  #tBar { position: relative; flex: 1; height: 44px; cursor: pointer; touch-action: none; }
+  #tBar::before { content: ""; position: absolute; left: 0; right: 0; top: 22px; height: 1px; background: var(--line); transition: transform .25s; }
+  #tBar:hover::before, #tBar:hover #tFill { transform: scaleY(3); }
+  #tFill { position: absolute; left: 0; top: 22px; height: 1px; background: #fff; pointer-events: none; transition: transform .25s; }
+  #tFill::after { content: ""; position: absolute; right: -5px; top: -5px; width: 11px; height: 11px; border-radius: 50%; background: #fff; transform: scale(calc(.8 + var(--hit) * 1.1)); }
+  #tBar:hover #tFill::after { transform: scale(1.2, .4); }
+  #tMarks i { position: absolute; top: 18px; width: 1px; height: 9px; background: rgba(255,255,255,.6); }
+  #tTime { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--dim); white-space: nowrap; }
+  #tMute { height: 44px; font-size: 13px; color: var(--dim); white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; transition: color .2s; }
+  #tMute:hover { color: #fff; }
+  .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .eq b { display: block; width: 2px; height: 12px; background: currentColor; transform: scaleY(.16); transform-origin: bottom; transition: transform .07s linear; }
+
+  /* ---- client page ---- */
+  #topbar, #start, #scrim, #cur, #burst { display: none; }
+  .show-mode #hud, .show-mode #help { display: none; }
+  .show-mode #transport { width: auto; left: var(--gutter); right: var(--gutter); transform: none; bottom: max(14px, env(safe-area-inset-bottom)); padding: 0; background: none; border-radius: 0; }
+
+  .show-mode #cur.on { display: block; position: fixed; left: -17px; top: -17px; width: 34px; height: 34px; z-index: 50; pointer-events: none; mix-blend-mode: difference; }
+  #cur::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid #fff; transition: transform .28s cubic-bezier(.3,1.5,.5,1), background .2s; }
+  #cur.big::after { transform: scale(1.9); background: #fff; }
+  .idle #cur::after { transform: scale(0); }
+
+  .show-mode #burst { display: block; position: fixed; inset: 0; z-index: 45; background: #fff; pointer-events: none; clip-path: circle(0 at var(--bx, 50%) var(--by, 50%)); opacity: 0; }
+  #burst.go { animation: burst .85s cubic-bezier(.7,0,.2,1) both; }
+  @keyframes burst { 0% { opacity: 1; clip-path: circle(0 at var(--bx) var(--by)); } 50% { opacity: 1; clip-path: circle(150vmax at var(--bx) var(--by)); } 100% { opacity: 0; clip-path: circle(150vmax at var(--bx) var(--by)); } }
+
+  .started #scrim { display: block; position: fixed; left: 0; right: 0; bottom: 0; height: 150px; z-index: 15; pointer-events: none;
+    background: linear-gradient(to top, rgba(0,0,0,.72), transparent); transition: opacity .4s; }
+  .started #topbar { display: flex; position: fixed; z-index: 30; right: var(--gutter); top: 14px; gap: 26px; transition: opacity .4s; }
+  #cams { position: relative; display: flex; gap: 26px; }
+  #cams button, #fullscreen { height: 44px; font-size: 13px; color: var(--dim); white-space: nowrap; text-shadow: 0 0 12px rgba(0,0,0,.7); transition: color .2s; }
+  #cams button:hover, #fullscreen:hover, #cams button.on { color: #fff; }
+  #camDot { position: absolute; left: 0; bottom: 4px; width: 4px; height: 4px; border-radius: 50%; background: #fff; opacity: 0; transition: transform .55s cubic-bezier(.5,1.6,.4,1), opacity .2s; }
+  .idle #topbar, .idle #transport, .idle #scrim { opacity: 0; pointer-events: none; }
+  .idle #topbar *, .idle #transport * { pointer-events: none; }
+  .idle { cursor: none; }
+
+  .show-mode #start { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; align-content: end; gap: 32px; position: fixed; inset: 0; z-index: 25; box-sizing: border-box;
+    padding: var(--gutter); background: linear-gradient(to top, #000 10%, rgba(0,0,0,.55) 48%, rgba(0,0,0,0) 82%); transition: opacity .7s .12s; }
+  .show-mode #start.gone { opacity: 0; pointer-events: none; }
+
+  #startMeta { margin: 0 0 clamp(8px, 1.2vw, 18px); font-size: 15px; color: var(--dim); opacity: 0; translate: 0 10px; }
+  .in #startMeta { opacity: 1; translate: 0 0; transition: opacity .7s .55s, translate .7s .55s cubic-bezier(.2,.9,.2,1); }
+  #startTitle { margin: 0; font-size: clamp(64px, 13.6vw, 236px); line-height: .9; font-weight: 900; letter-spacing: -.012em; font-stretch: 100%; }
+  #startTitle .w { display: inline-block; white-space: nowrap; color: #fff; }
+  #startTitle .w.gray { color: #757575; }
+  #startTitle .c { display: inline-block; overflow: hidden; padding-top: .2em; margin-top: -.2em; vertical-align: bottom; }
+  #startTitle .m { display: inline-block; transform: translate3d(0, 112%, 0); will-change: transform; }
+  .in #startTitle .m { transform: none; transition: transform 1s cubic-bezier(.16,1,.3,1) calc(var(--i) * 48ms + .1s); }
+  .leaving #startTitle .m { transform: translate3d(0, -122%, 0); transition: transform .5s cubic-bezier(.7,0,.8,.3) calc(var(--i) * 20ms); }
+  /* letters never change shape: a slow wave of light passes through them (opacity only, so nothing can shift) */
+  #startTitle .g { display: inline-block; font-variation-settings: "wght" 900, "wdth" 108; will-change: opacity; }
+  .in #startTitle .g { animation: lightwave 8s cubic-bezier(.45,0,.55,1) calc(var(--i) * 130ms + 1.8s) infinite; }
+  .leaving #startTitle .g { animation: none; }
+  @keyframes lightwave { 0%, 58%, 100% { opacity: 1; } 29% { opacity: .42; } }
+
+  #startAction { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; opacity: 0; translate: 0 16px; }
+  .in #startAction { opacity: 1; translate: 0 0; transition: opacity .7s .85s, translate .9s .85s cubic-bezier(.2,1.3,.3,1); }
+  .leaving #startAction { opacity: 0; translate: 0 0; transition: opacity .25s; }
+  #startNote { margin: 0; font-size: 13px; color: var(--dim); white-space: nowrap; }
+
+  #startBtn { --p: 0%; --fx: 50%; --fy: 50%; position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; gap: 14px; height: 64px; min-width: 212px; padding: 0 30px;
+    border-radius: 999px; background: #fff; color: #000; font-size: 16px; font-weight: 700; white-space: nowrap; transition: color .3s, box-shadow .3s; isolation: isolate; }
+  #startBtn::before { content: ""; position: absolute; z-index: -1; left: var(--fx); top: var(--fy); width: 12px; height: 12px; margin: -6px; border-radius: 50%; background: #000; transform: scale(0); transition: transform .65s cubic-bezier(.2,.8,.2,1); }
+  #startBtn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; overflow: hidden; }
+  #startBtn svg path { transition: transform .55s cubic-bezier(.7,0,.15,1); }
+  #startBtn svg .a2 { transform: translateX(-26px); }
+  #startBtn:not(:disabled):hover { color: #fff; box-shadow: inset 0 0 0 1px #fff; }
+  #startBtn:not(:disabled):hover::before { transform: scale(60); }
+  #startBtn:not(:disabled):hover svg .a1 { transform: translateX(26px); }
+  #startBtn:not(:disabled):hover svg .a2 { transform: none; }
+  #startBtn:not(:disabled):active { scale: .96; }
+  #startBtn:disabled { color: var(--fg); cursor: default; background: linear-gradient(#fff, #fff) left bottom/var(--p) 2px no-repeat; box-shadow: inset 0 0 0 1px var(--line); }
+  #startBtn:disabled svg { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #startTitle .g { animation: none !important; }
+    #startTitle .m, #startMeta, #startAction { transform: none !important; translate: none !important; opacity: 1 !important; transition: none !important; }
+    #startBtn::before, .roll > span, #camDot { transition: none; }
+  }
+  @media (max-width: 760px) {
+    #tTime { display: none; }
+    #cams { gap: 18px; }
+    #fullscreen { display: none; }
+    .show-mode #start { grid-template-columns: minmax(0, 1fr); }
+    #startTitle { font-size: clamp(64px, 22vw, 150px); }
+    #startAction { flex-direction: column-reverse; align-items: stretch; }
+    #startNote { text-align: center; }
+    #startBtn { width: 100%; }
+  }
+  @media (max-height: 460px) { #startTitle { font-size: clamp(48px, 24vh, 110px); } }
+</style>
+<script>window.SIM_SHOW = 'show/show.json';</script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud">
+  <h1><span id="beat"></span>Alte Münze · Show Simulator</h1>
+  <div class="row">LED 30.0 × 6.72 m · 3840 × 860 px · ≈7.8 mm</div>
+  <div class="row" id="src"></div>
+  <div class="row" id="fps"></div>
+</div>
+<div id="help">
+  <kbd>1</kbd>–<kbd>8</kbd> cue · <kbd>Shift</kbd>+num store · <kbd>B</kbd> blackout · <kbd>F</kbd> flash (hold) ·
+  <kbd>Space</kbd> play · <kbd>M</kbd> timeline marker · <kbd>T</kbd> tap · <kbd>S</kbd> bars white strobe (hold) · <kbd>G</kbd> fog burst · <kbd>C</kbd> camera · <kbd>H</kbd> hide UI · drop a video on the window to play it on the wall
+</div>
+<div id="toast"></div>
+
+<div id="scrim"></div>
+<div id="cur"></div>
+<div id="burst"></div>
+<div id="topbar">
+  <div id="cams" role="group" aria-label="Camera position"><i id="camDot"></i></div>
+  <button id="fullscreen" type="button"><span class="roll"><span>Fullscreen</span><span aria-hidden="true">Fullscreen</span></span></button>
+</div>
+
+<div id="transport">
+  <button id="tPlay" type="button" data-state="paused" aria-label="Play or pause"><i></i></button>
+  <div id="tBar"><div id="tFill"></div><div id="tMarks"></div></div>
+  <span id="tTime"></span>
+  <button id="tMute" type="button"><i class="eq" aria-hidden="true"><b></b><b></b><b></b><b></b></i><span class="lbl">Sound off</span></button>
+</div>
+
+<section id="start">
+  <div>
+    <p id="startMeta">Alte Münze, Berlin</p>
+    <h1 id="startTitle">&nbsp;</h1>
+  </div>
+  <div id="startAction">
+    <p id="startNote">Best with sound on</p>
+    <button id="startBtn" type="button" disabled><span class="roll"><span>Loading</span><span aria-hidden="true">Loading</span></span><svg viewBox="0 0 18 18" aria-hidden="true"><path class="a1" d="M1 9h15M10 3l6 6-6 6"/><path class="a2" d="M1 9h15M10 3l6 6-6 6"/></svg></button>
+  </div>
+</section>
+
+<div id="drop">Drop video or image to play on the LED wall</div>
+<input type="file" id="file" accept="video/*,image/*" hidden>
+<input type="file" id="showfile" accept="application/json,.json" hidden>
+<input type="file" id="gobofile" accept="image/*" hidden>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
